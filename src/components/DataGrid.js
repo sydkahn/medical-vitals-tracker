@@ -1,122 +1,119 @@
-// components/DataGrid.js
+// src/components/DataGrid.js
 import React, { useState } from 'react';
 
 const DataGrid = ({ records, onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
-  // Filter records based on search term
+  // Safely filter records based on search term
   const filteredRecords = records.filter(record => {
-    const searchLower = searchTerm.toLowerCase();
+    // Ensure record is an object before accessing properties
+    if (!record || typeof record !== 'object') {
+      return false; // Exclude invalid records
+    }
+
+    // Normalize the search term
+    const normalizedSearchTerm = searchTerm.toLowerCase();
+
+    // Check if any searchable field contains the search term
+    // Use optional chaining (?.) and nullish coalescing (??) to prevent errors
+    // Adjust the fields being searched as needed (e.g., include more fields)
     return (
-      record.patientInitials.toLowerCase().includes(searchLower) ||
-      record.dateTime.toLowerCase().includes(searchLower) ||
-      record.glucose?.toString().includes(searchLower) ||
-      record.weight?.toString().includes(searchLower) ||
-      record.temperature?.toString().includes(searchLower) ||
-      record.systolic?.toString().includes(searchLower) ||
-      record.diastolic?.toString().includes(searchLower) ||
-      record.heartRate?.toString().includes(searchLower) ||
-      record.oxygenSaturation?.toString().includes(searchLower) ||
-      record.notes.toLowerCase().includes(searchLower)
+      (record.patient_initials ?? '').toString().toLowerCase().includes(normalizedSearchTerm) ||
+      (record.datetime_recorded ?? '').toString().toLowerCase().includes(normalizedSearchTerm) ||
+      // Add more fields if needed, e.g.:
+      // (record.notes ?? '').toString().toLowerCase().includes(normalizedSearchTerm) ||
+      false // Default if no match
     );
   });
 
-  // Sort records
-  const sortedRecords = [...filteredRecords];
-  if (sortConfig.key) {
-    sortedRecords.sort((a, b) => {
-      if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-  }
-
-  const requestSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
+  // Safely sort records by datetime_recorded (descending)
+  const sortedRecords = [...filteredRecords].sort((a, b) => {
+    if (!a || !b) return 0; // Handle potential null records during sort
+    const dateA = new Date(a.datetime_recorded);
+    const dateB = new Date(b.datetime_recorded);
+    // Ensure dates are valid before comparing
+    if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+        // If one date is invalid, put it at the end
+        if (isNaN(dateA.getTime()) && isNaN(dateB.getTime())) return 0;
+        return isNaN(dateA.getTime()) ? 1 : -1;
     }
-    setSortConfig({ key, direction });
+    return dateB - dateA; // Sort newest first
+  });
+
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
   };
 
-  const getSortedClass = (name) => {
-    if (sortConfig.key === name) {
-      return sortConfig.direction === 'asc' ? 'sorted-asc' : 'sorted-desc';
-    }
-    return '';
+  // Helper function to format date for display (adjust format as needed)
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    // Example: Format to locale string (e.g., "6/19/2026, 5:21:00 PM")
+    return date.toLocaleString();
+  };
+
+  // Helper function to format numbers (handle null/undefined)
+  const formatNumber = (num) => {
+    if (num == null) return 'N/A'; // Or return '' for empty cells
+    return num;
   };
 
   return (
-    <div className="data-grid-container">
+    <div className="data-grid">
+      <h2>Data Grid</h2>
       <div className="grid-controls">
         <input
           type="text"
           placeholder="Search records..."
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={handleSearchChange}
+          className="search-input"
         />
       </div>
-      
-      <div className="table-responsive">
-        <table className="data-grid">
+      {sortedRecords.length === 0 ? (
+        <p>No vital records found matching the search term.</p>
+      ) : (
+        <table className="records-table">
           <thead>
             <tr>
-              <th onClick={() => requestSort('patientInitials')} className={getSortedClass('patientInitials')}>
-                Patient
-              </th>
-              <th onClick={() => requestSort('dateTime')} className={getSortedClass('dateTime')}>
-                Date/Time
-              </th>
-              <th onClick={() => requestSort('glucose')} className={getSortedClass('glucose')}>
-                Glucose
-              </th>
-              <th onClick={() => requestSort('weight')} className={getSortedClass('weight')}>
-                Weight
-              </th>
+              <th>Patient</th>
+              <th>Date/Time</th>
+              <th>Glucose</th>
+              <th>Weight</th>
               <th>Temp</th>
-              <th>Blood Pressure</th>
-              <th onClick={() => requestSort('heartRate')} className={getSortedClass('heartRate')}>
-                Heart Rate
-              </th>
-              <th onClick={() => requestSort('oxygenSaturation')} className={getSortedClass('oxygenSaturation')}>
-                O2 Sat
-              </th>
+              <th>BP (Sys/Dia)</th>
+              <th>HR</th>
+              <th>SpO2</th>
               <th>Notes</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {sortedRecords.length > 0 ? (
-              sortedRecords.map(record => (
-                <tr key={record.id}>
-                  <td>{record.patientInitials}</td>
-                  <td>{new Date(record.dateTime).toLocaleString()}</td>
-                  <td>{record.glucose || '-'}</td>
-                  <td>{record.weight || '-'} {record.weight ? (record.weightUnit || '') : ''}</td>
-                  <td>{record.temperature || '-'}°{record.temperatureUnit || 'F'}</td>
-                  <td>{record.systolic ? `${record.systolic}/${record.diastolic}` : '-'}</td>
-                  <td>{record.heartRate || '-'} bpm</td>
-                  <td>{record.oxygenSaturation || '-'}%</td>
-                  <td>{record.notes || '-'}</td>
-                  <td>
-                    <button onClick={() => onEdit(record.id)} className="edit-btn">Edit</button>
-                    <button onClick={() => onDelete(record.id)} className="delete-btn">Delete</button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="10" className="no-data">No records found</td>
+            {sortedRecords.map((record) => (
+              <tr key={record.id}>
+                <td>{record.patient_initials || 'N/A'}</td>
+                <td>{formatDate(record.datetime_recorded)}</td>
+                <td>{formatNumber(record.glucose)}</td>
+                <td>{formatNumber(record.weight)}</td>
+                <td>
+                  {record.temperature != null ? `${record.temperature}°${record.temperature_unit || '?'}` : 'N/A'}
+                </td>
+                <td>
+                  {record.systolic != null && record.diastolic != null ? `${record.systolic}/${record.diastolic}` : 'N/A'}
+                </td>
+                <td>{formatNumber(record.heart_rate)}</td>
+                <td>{record.oxygen_saturation != null ? `${record.oxygen_saturation}%` : 'N/A'}</td>
+                <td>{record.notes || ''}</td>
+                <td>
+                  <button onClick={() => onEdit(record.id)}>Edit</button>
+                  <button onClick={() => onDelete(record.id)}>Delete</button>
+                </td>
               </tr>
-            )}
+            ))}
           </tbody>
         </table>
-      </div>
+      )}
     </div>
   );
 };

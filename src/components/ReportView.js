@@ -1,344 +1,355 @@
-// components/ReportView.js
-import React, { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+// src/components/ReportView.js
+import React, { useState, useEffect } from 'react';
+// --- Import Chart.js components ---
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  TimeScale, // Add TimeScale
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import 'chartjs-adapter-date-fns'; // Import the date-fns adapter
+import { Line, Bar } from 'react-chartjs-2';
+// --- End Chart.js imports ---
+
+// Register Chart.js components - Include TimeScale
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  TimeScale, // Register TimeScale
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const ReportView = ({ records }) => {
-  const [chartData, setChartData] = useState([]);
-  const [selectedPatient, setSelectedPatient] = useState('all');
-  const reportRef = useRef();
+  const [glucoseData, setGlucoseData] = useState(null);
+  const [weightData, setWeightData] = useState(null);
+  const [bpData, setBpData] = useState(null); // Systolic/Diastolic
+  const [hrData, setHrData] = useState(null); // Heart Rate
+  const [spo2Data, setSpo2Data] = useState(null); // Oxygen Saturation
 
-  // Get unique patients
-  const uniquePatients = [...new Set(records.map(r => r.patientInitials))];
+  // State for filters - NEW
+  const [selectedInitials, setSelectedInitials] = useState(''); // State for selected initials filter
+  const [startDate, setStartDate] = useState(''); // State for start date filter
+  const [endDate, setEndDate] = useState(''); // State for end date filter
 
-  // Filter records for last 30 days
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  // Extract unique initials for the dropdown - NEW
+  const uniqueInitials = [...new Set(records.map(record => record.patient_initials))].sort();
 
-  const filteredRecords = records.filter(record => {
-    const recordDate = new Date(record.dateTime);
-    return recordDate >= thirtyDaysAgo && 
-           (selectedPatient === 'all' || record.patientInitials === selectedPatient);
-  });
+  // Function to format date for display (adjust as needed)
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleDateString();
+  };
 
-  // Prepare chart data
+  // Function to format time for display (adjust as needed)
+  const formatTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleTimeString();
+  };
+
   useEffect(() => {
-    if (!filteredRecords || filteredRecords.length === 0) {
-      setChartData([]);
+    // Apply filters to the records prop - MODIFIED
+    let filteredRecords = records;
+
+    if (!records || records.length === 0) {
+      // No records, set data to null to trigger "No data" message
+      setGlucoseData(null);
+      setWeightData(null);
+      setBpData(null);
+      setHrData(null);
+      setSpo2Data(null);
       return;
     }
 
-    const preparedData = filteredRecords.map(record => ({
-      date: new Date(record.dateTime).toLocaleDateString(),
-      glucose: parseFloat(record.glucose) || null,
-      weight: parseFloat(record.weight) || null,
-      temperature: parseFloat(record.temperature) || null,
-      systolic: parseFloat(record.systolic) || null,
-      diastolic: parseFloat(record.diastolic) || null,
-      heartRate: parseFloat(record.heartRate) || null,
-      oxygenSaturation: parseFloat(record.oxygenSaturation) || null
-    }));
+    // Filter by initials if selected
+    if (selectedInitials) {
+      filteredRecords = filteredRecords.filter(record => record.patient_initials === selectedInitials);
+    }
+    // Filter by start date if provided
+    if (startDate) {
+      filteredRecords = filteredRecords.filter(record => new Date(record.datetime_recorded) >= new Date(startDate));
+    }
+    // Filter by end date if provided
+    if (endDate) {
+      filteredRecords = filteredRecords.filter(record => new Date(record.datetime_recorded) <= new Date(endDate));
+    }
 
-    // Group by date (average values for same day)
-    const groupedData = {};
-    preparedData.forEach(item => {
-      if (!groupedData[item.date]) {
-        groupedData[item.date] = {
-          date: item.date,
-          glucose: [],
-          weight: [],
-          temperature: [],
-          systolic: [],
-          diastolic: [],
-          heartRate: [],
-          oxygenSaturation: []
-        };
-      }
-      
-      if (item.glucose !== null) groupedData[item.date].glucose.push(item.glucose);
-      if (item.weight !== null) groupedData[item.date].weight.push(item.weight);
-      if (item.temperature !== null) groupedData[item.date].temperature.push(item.temperature);
-      if (item.systolic !== null) groupedData[item.date].systolic.push(item.systolic);
-      if (item.diastolic !== null) groupedData[item.date].diastolic.push(item.diastolic);
-      if (item.heartRate !== null) groupedData[item.date].heartRate.push(item.heartRate);
-      if (item.oxygenSaturation !== null) groupedData[item.date].oxygenSaturation.push(item.oxygenSaturation);
+    // If no records match the filters after applying them
+    if (filteredRecords.length === 0) {
+       setGlucoseData(null);
+       setWeightData(null);
+       setBpData(null);
+       setHrData(null);
+       setSpo2Data(null);
+       return;
+    }
+
+    // Calculate the date 30 days ago from now (in the browser's timezone for display purposes)
+    // This step might be redundant if you want to plot *all* filtered records, not just the last 30 days
+    // If you want to plot ALL filtered records regardless of age, remove the 30-day filter logic below
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Optionally, filter to the last 30 days from the *current date* based on the already filtered list
+    // Uncomment the next line if you want to combine the custom filters with the 30-day window
+    // filteredRecords = filteredRecords.filter(record => new Date(record.datetime_recorded) >= thirtyDaysAgo);
+
+    // Sort filtered records by date (oldest first for plotting)
+    const sortedRecords = filteredRecords.sort((a, b) => new Date(a.datetime_recorded) - new Date(b.datetime_recorded));
+
+    // Prepare labels (dates) - Use the full datetime string for Chart.js TimeScale to parse
+    // Chart.js TimeScale can parse ISO strings directly
+    const labels = sortedRecords.map(record => record.datetime_recorded); // Use full datetime string for Chart.js
+
+    // Prepare data points for each metric
+    const glucoseValues = sortedRecords.map(record => record.glucose != null ? record.glucose : null);
+    const weightValues = sortedRecords.map(record => record.weight != null ? record.weight : null);
+    const systolicValues = sortedRecords.map(record => record.systolic != null ? record.systolic : null);
+    const diastolicValues = sortedRecords.map(record => record.diastolic != null ? record.diastolic : null);
+    const hrValues = sortedRecords.map(record => record.heart_rate != null ? record.heart_rate : null);
+    const spo2Values = sortedRecords.map(record => record.oxygen_saturation != null ? record.oxygen_saturation : null);
+
+    // --- Glucose Chart Data ---
+    setGlucoseData({
+      labels: labels, // Use datetime strings
+      datasets: [
+        {
+          label: 'Glucose (mg/dL)',
+          data: glucoseValues,
+          borderColor: 'rgb(255, 99, 132)',
+          backgroundColor: 'rgba(255, 99, 132, 0.5)',
+          tension: 0.1,
+        },
+      ],
     });
 
-    const finalData = Object.values(groupedData).map(item => ({
-      date: item.date,
-      glucose: item.glucose.length ? (item.glucose.reduce((a, b) => a + b, 0) / item.glucose.length).toFixed(1) : null,
-      weight: item.weight.length ? (item.weight.reduce((a, b) => a + b, 0) / item.weight.length).toFixed(1) : null,
-      temperature: item.temperature.length ? (item.temperature.reduce((a, b) => a + b, 0) / item.temperature.length).toFixed(1) : null,
-      systolic: item.systolic.length ? (item.systolic.reduce((a, b) => a + b, 0) / item.systolic.length).toFixed(0) : null,
-      diastolic: item.diastolic.length ? (item.diastolic.reduce((a, b) => a + b, 0) / item.diastolic.length).toFixed(0) : null,
-      heartRate: item.heartRate.length ? (item.heartRate.reduce((a, b) => a + b, 0) / item.heartRate.length).toFixed(0) : null,
-      oxygenSaturation: item.oxygenSaturation.length ? (item.oxygenSaturation.reduce((a, b) => a + b, 0) / item.oxygenSaturation.length).toFixed(1) : null
-    }));
+    // --- Weight Chart Data ---
+    setWeightData({
+      labels: labels, // Use datetime strings
+      datasets: [
+        {
+          label: 'Weight (lbs/kg)',
+          data: weightValues,
+          borderColor: 'rgb(53, 162, 235)',
+          backgroundColor: 'rgba(53, 162, 235, 0.5)',
+          tension: 0.1,
+        },
+      ],
+    });
 
-    setChartData(finalData);
-  }, [filteredRecords]); // Only re-run when filteredRecords changes
+    // --- Blood Pressure Chart Data ---
+    setBpData({
+      labels: labels, // Use datetime strings
+      datasets: [
+        {
+          label: 'Systolic (mmHg)',
+          data: systolicValues,
+          borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.5)',
+          type: 'line',
+          tension: 0.1,
+        },
+        {
+          label: 'Diastolic (mmHg)',
+          data: diastolicValues,
+          borderColor: 'rgb(153, 102, 255)',
+          backgroundColor: 'rgba(153, 102, 255, 0.5)',
+          type: 'line',
+          tension: 0.1,
+        },
+      ],
+    });
 
-  const handleDownloadPDF = async () => {
-    const input = reportRef.current;
-    input.style.display = 'block'; // Ensure content is visible
-    
-    try {
-      // Generate canvas from the report div
-      const canvas = await html2canvas(input, { scale: 2 }); // Higher quality
-      const imgData = canvas.toDataURL('image/png');
-      
-      // Create PDF
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+    // --- Heart Rate Chart Data ---
+    setHrData({
+      labels: labels, // Use datetime strings
+      datasets: [
+        {
+          label: 'Heart Rate (bpm)',
+          data: hrValues,
+          borderColor: 'rgb(255, 159, 64)',
+          backgroundColor: 'rgba(255, 159, 64, 0.5)',
+          tension: 0.1,
+        },
+      ],
+    });
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+    // --- Oxygen Saturation Chart Data ---
+    setSpo2Data({
+      labels: labels, // Use datetime strings
+      datasets: [
+        {
+          label: 'Oxygen Saturation (%)',
+          data: spo2Values,
+          borderColor: 'rgb(199, 199, 199)',
+          backgroundColor: 'rgba(199, 199, 199, 0.5)',
+          tension: 0.1,
+        },
+      ],
+    });
 
-      // Add additional pages if needed
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, Math.abs(position), imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
+  }, [records, selectedInitials, startDate, endDate]); // Re-run when records or filter states change
 
-      // Save the PDF
-      pdf.save(`vital_statistics_report_${new Date().toISOString().slice(0,10)}.pdf`);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Error generating PDF. Please try again.');
-    } finally {
-      // Hide the report div again after PDF generation
-      input.style.display = 'none';
-    }
+
+  // Common chart options - Configure X-axis as time
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: '', // Title is set per chart below
+      },
+    },
+    scales: {
+      x: { // Configure the x-axis (time axis)
+        type: 'time', // Specify time scale
+        time: {
+          // Format depends on how your datetime strings are formatted
+          // ISO strings like "2026-06-19T17:21:00.000Z" are usually parsed automatically
+          // You can specify parser if needed, but default often works for ISO
+          // parser: 'YYYY-MM-DDTHH:mm:ss.SSSZ', // Example parser string if needed
+          tooltipFormat: 'PPpp', // Format for tooltips (date and time)
+          unit: 'day', // Granularity: minute, hour, day, month, etc.
+          stepSize: 1, // How many units per step
+        },
+        title: {
+          display: true,
+          text: 'Date/Time',
+        },
+        ticks: {
+            maxRotation: 45, // Allow some rotation if labels are long
+            autoSkip: true,  // Automatically skip ticks to avoid overlap
+            maxTicksLimit: 10, // Limit number of ticks
+        }
+      },
+      y: {
+        beginAtZero: false, // Usually better for health metrics not to start at zero
+        title: {
+            display: true,
+            text: 'Value'
+        }
+      },
+    },
   };
 
-  // Calculate summary statistics
-  const calculateStats = (field) => {
-    const values = filteredRecords
-      .filter(r => r[field] !== undefined && r[field] !== null && r[field] !== '')
-      .map(r => parseFloat(r[field]));
-    
-    if (values.length === 0) return null;
-    
-    const sum = values.reduce((a, b) => a + b, 0);
-    const avg = (sum / values.length).toFixed(1);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    
-    return { avg, min, max, count: values.length };
+  // Handler functions for filter changes - NEW
+  const handleInitialsChange = (e) => {
+    setSelectedInitials(e.target.value);
   };
 
-  const glucoseStats = calculateStats('glucose');
-  const weightStats = calculateStats('weight');
-  const tempStats = calculateStats('temperature');
-  const bpStats = {
-    systolic: calculateStats('systolic'),
-    diastolic: calculateStats('diastolic')
+  const handleStartDateChange = (e) => {
+    setStartDate(e.target.value);
   };
-  const hrStats = calculateStats('heartRate');
-  const o2Stats = calculateStats('oxygenSaturation');
+
+  const handleEndDateChange = (e) => {
+    setEndDate(e.target.value);
+  };
 
   return (
-    <div ref={reportRef} className="report-view">
-      <div className="report-header">
-        <h2>30-Day Vital Statistics Report</h2>
-        <div className="report-controls">
-          <select 
-            value={selectedPatient} 
-            onChange={(e) => setSelectedPatient(e.target.value)}
+    <div className="report-view">
+      <h2>30-Day Trend Reports</h2>
+
+      {/* Filters Section - ADDED */}
+      <div className="filters-section">
+        <h3>Filters</h3>
+        <div className="filter-controls">
+          <label htmlFor="reportInitialsFilter">Filter by Initials:</label>
+          <select
+            id="reportInitialsFilter"
+            value={selectedInitials}
+            onChange={handleInitialsChange}
           >
-            <option value="all">All Patients</option>
-            {uniquePatients.map(patient => (
-              <option key={patient} value={patient}>{patient}</option>
+            <option value="">All Initials</option>
+            {uniqueInitials.map(initial => (
+              <option key={initial} value={initial}>{initial}</option>
             ))}
           </select>
-          <button onClick={handleDownloadPDF} className="pdf-btn">Download PDF</button>
+
+          <label htmlFor="reportStartDatePicker">Start Date/Time:</label>
+          <input
+            type="datetime-local"
+            id="reportStartDatePicker"
+            value={startDate}
+            onChange={handleStartDateChange}
+          />
+
+          <label htmlFor="reportEndDatePicker">End Date/Time:</label>
+          <input
+            type="datetime-local"
+            id="reportEndDatePicker"
+            value={endDate}
+            onChange={handleEndDateChange}
+          />
         </div>
       </div>
 
-      <div className="stats-summary">
-        <div className="stat-card">
-          <h3>Glucose (mg/dL)</h3>
-          {glucoseStats ? (
-            <>
-              <p>Avg: {glucoseStats.avg}</p>
-              <p>Range: {glucoseStats.min} - {glucoseStats.max}</p>
-              <p>Measurements: {glucoseStats.count}</p>
-            </>
-          ) : <p>No data available</p>}
-        </div>
-        
-        <div className="stat-card">
-          <h3>Weight (lbs)</h3>
-          {weightStats ? (
-            <>
-              <p>Avg: {weightStats.avg}</p>
-              <p>Range: {weightStats.min} - {weightStats.max}</p>
-              <p>Measurements: {weightStats.count}</p>
-            </>
-          ) : <p>No data available</p>}
-        </div>
-        
-        <div className="stat-card">
-          <h3>Temperature (°F)</h3>
-          {tempStats ? (
-            <>
-              <p>Avg: {tempStats.avg}</p>
-              <p>Range: {tempStats.min} - {tempStats.max}</p>
-              <p>Measurements: {tempStats.count}</p>
-            </>
-          ) : <p>No data available</p>}
-        </div>
-        
-        <div className="stat-card">
-          <h3>Blood Pressure (mmHg)</h3>
-          {bpStats.systolic && bpStats.diastolic ? (
-            <>
-              <p>Sys: Avg {bpStats.systolic.avg}, Range {bpStats.systolic.min}-{bpStats.systolic.max}</p>
-              <p>Dia: Avg {bpStats.diastolic.avg}, Range {bpStats.diastolic.min}-{bpStats.diastolic.max}</p>
-              <p>Measurements: {bpStats.systolic.count}</p>
-            </>
-          ) : <p>No data available</p>}
-        </div>
-        
-        <div className="stat-card">
-          <h3>Heart Rate (bpm)</h3>
-          {hrStats ? (
-            <>
-              <p>Avg: {hrStats.avg}</p>
-              <p>Range: {hrStats.min} - {hrStats.max}</p>
-              <p>Measurements: {hrStats.count}</p>
-            </>
-          ) : <p>No data available</p>}
-        </div>
-        
-        <div className="stat-card">
-          <h3>O2 Saturation (%)</h3>
-          {o2Stats ? (
-            <>
-              <p>Avg: {o2Stats.avg}</p>
-              <p>Range: {tempStats.min} - {tempStats.max}</p>
-              <p>Measurements: {tempStats.count}</p>
-            </>
-          ) : <p>No data available</p>}
-        </div>
+      {/* Glucose Chart */}
+      <div className="chart-container">
+        <h3>Glucose Levels</h3>
+        {glucoseData ? (
+          <Line options={{ ...chartOptions, title: { ...chartOptions.plugins.title, text: 'Glucose (mg/dL) over Last 30 Days' } }} data={glucoseData} />
+        ) : (
+          <p>No glucose data available for this period.</p>
+        )}
       </div>
 
-      <div className="charts-container">
-        <div className="chart">
-          <h3>Glucose Levels Over Time</h3>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis domain={[70, 140]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="glucose" stroke="#8884d8" activeDot={{ r: 8 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="no-data">No data available for this period</div>
-          )}
-        </div>
-        
-        <div className="chart">
-          <h3>Weight Trend</h3>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="weight" stroke="#82ca9d" activeDot={{ r: 8 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="no-data">No data available for this period</div>
-          )}
-        </div>
-        
-        <div className="chart">
-          <h3>Temperature Over Time</h3>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis domain={[96, 102]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="temperature" stroke="#ff7300" activeDot={{ r: 8 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="no-data">No data available for this period</div>
-          )}
-        </div>
-        
-        <div className="chart">
-          <h3>Blood Pressure Trend</h3>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="systolic" stroke="#ff0000" name="Systolic" />
-                <Line type="monotone" dataKey="diastolic" stroke="#00ff00" name="Diastolic" />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="no-data">No data available for this period</div>
-          )}
-        </div>
-        
-        <div className="chart">
-          <h3>Heart Rate Over Time</h3>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis domain={[50, 120]} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="heartRate" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="no-data">No data available for this period</div>
-          )}
-        </div>
-        
-        <div className="chart">
-          <h3>Oxygen Saturation Trend</h3>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis domain={[90, 100]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="oxygenSaturation" stroke="#00c4ff" activeDot={{ r: 8 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="no-data">No data available for this period</div>
-          )}
-        </div>
+      {/* Weight Chart */}
+      <div className="chart-container">
+        <h3>Weight Trends</h3>
+        {weightData ? (
+          <Line options={{ ...chartOptions, title: { ...chartOptions.plugins.title, text: 'Weight (lbs/kg) over Last 30 Days' } }} data={weightData} />
+        ) : (
+          <p>No weight data available for this period.</p>
+        )}
+      </div>
+
+      {/* Blood Pressure Chart */}
+      <div className="chart-container">
+        <h3>Blood Pressure (Systolic/Diastolic)</h3>
+        {bpData ? (
+          <Line options={{ ...chartOptions, title: { ...chartOptions.plugins.title, text: 'Blood Pressure (mmHg) over Last 30 Days' } }} data={bpData} />
+        ) : (
+          <p>No blood pressure data available for this period.</p>
+        )}
+      </div>
+
+      {/* Heart Rate Chart */}
+      <div className="chart-container">
+        <h3>Heart Rate</h3>
+        {hrData ? (
+          <Line options={{ ...chartOptions, title: { ...chartOptions.plugins.title, text: 'Heart Rate (bpm) over Last 30 Days' } }} data={hrData} />
+        ) : (
+          <p>No heart rate data available for this period.</p>
+        )}
+      </div>
+
+      {/* Oxygen Saturation Chart */}
+      <div className="chart-container">
+        <h3>Oxygen Saturation</h3>
+        {spo2Data ? (
+          <Line options={{ ...chartOptions, title: { ...chartOptions.plugins.title, text: 'Oxygen Saturation (%) over Last 30 Days' } }} data={spo2Data} />
+        ) : (
+          <p>No oxygen saturation data available for this period.</p>
+        )}
       </div>
     </div>
   );
