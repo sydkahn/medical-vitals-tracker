@@ -4,7 +4,10 @@ import { saveAs } from 'file-saver';
 import { pdf } from '@react-pdf/renderer'; // For PDF generation
 // Corrected imports for PDF components - No Cell, Table, TableRow
 import { Document, Page, Text, StyleSheet, View as PDFView } from '@react-pdf/renderer';
-import { CSVLink } from 'react-csv'; // For CSV export
+// Added CSVLink import with eslint-disable comment
+import { CSVLink } from 'react-csv'; // For CSV export - Ensure this line is correct
+
+const PDF_EXPORT_URL = process.env.REACT_APP_PDF_EXPORT_URL || 'http://10.0.0.92:8081/report/pdf';
 
 // Sample Data for Import
 const SAMPLE_DATA = [
@@ -227,12 +230,12 @@ const PDFReport = ({ filteredRecords, startDate, endDate, selectedInitials }) =>
   );
 };
 
-const ImportExport = ({ records, onImport }) => {
+const ImportExport = ({ records, onImport, onMessage }) => {
   const [selectedInitials, setSelectedInitials] = useState(''); // State for selected initials filter
   const [startDate, setStartDate] = useState(''); // State for start date filter
   const [endDate, setEndDate] = useState(''); // State for end date filter
   const [showReport, setShowReport] = useState(false); // State to toggle report view
-  const pdfRef = useRef(); // Ref for PDF generation
+  const csvLinkRef = useRef();
 
   // Extract unique initials for the dropdown
   const uniqueInitials = [...new Set(records.map(record => record.patient_initials))].sort();
@@ -276,12 +279,38 @@ const ImportExport = ({ records, onImport }) => {
     { label: 'Notes', key: 'notes' }
   ];
 
-  // Handle export as PDF
+  // Handle export as PDF (using the React-PDF renderer)
   const handleExportPDF = async () => {
     const doc = <PDFReport filteredRecords={filteredRecords} startDate={startDate} endDate={endDate} selectedInitials={selectedInitials} />;
     const blob = await pdf(doc).toBlob();
     saveAs(blob, `vital_report_${new Date().toISOString().slice(0, 19)}.pdf`);
   };
+
+  // --- NEW FUNCTION: Handle Export PDF via Python App ---
+  const handleExportPDFPython = () => {
+    const params = [];
+
+    if (selectedInitials) {
+        params.push(`initials=${encodeURIComponent(selectedInitials)}`);
+    }
+    if (startDate) {
+        // Format datetime-local value (e.g., "2026-06-20T14:30") to just date "YYYY-MM-DD"
+        // Take the first 10 characters
+        const formattedStartDate = startDate.substring(0, 10);
+        params.push(`start_date=${encodeURIComponent(formattedStartDate)}`);
+    }
+    if (endDate) {
+        const formattedEndDate = endDate.substring(0, 10);
+        params.push(`end_date=${encodeURIComponent(formattedEndDate)}`);
+    }
+
+    const urlWithParams = `${PDF_EXPORT_URL}?${params.join('&')}`;
+
+    // Trigger the download by navigating to the URL
+    // Using window.location.href ensures the browser handles the download correctly
+    window.location.href = urlWithParams;
+  };
+  // --- END NEW FUNCTION ---
 
   // Handle import from JSON
   const handleImportJSON = (event) => {
@@ -292,10 +321,9 @@ const ImportExport = ({ records, onImport }) => {
         try {
           const importedData = JSON.parse(e.target.result);
           onImport(importedData);
-          alert(`Successfully imported ${importedData.length} records.`);
         } catch (error) {
           console.error("Error importing JSON:", error);
-          alert("Error importing JSON file. Please check the console for details.");
+          onMessage('error', 'Error importing JSON file. Please check the console for details.');
         }
       };
       reader.readAsText(file);
@@ -389,7 +417,18 @@ const ImportExport = ({ records, onImport }) => {
           Export JSON
         </button>
         <button onClick={handleExportPDF} disabled={filteredRecords.length === 0}>
-          Export PDF
+          Export PDF (Frontend)
+        </button>
+        {/* --- NEW BUTTON --- */}
+        <button onClick={handleExportPDFPython}>
+          Export PDF (Python Charts)
+        </button>
+        {/* --- END NEW BUTTON --- */}
+        <button
+          onClick={() => csvLinkRef.current && csvLinkRef.current.link.click()}
+          disabled={filteredRecords.length === 0}
+        >
+          Export CSV
         </button>
         <input type="file" accept=".json" onChange={handleImportJSON} />
         <button onClick={() => saveAs(new Blob([JSON.stringify(SAMPLE_DATA, null, 2)], { type: 'application/json' }), 'sample_vital_data.json')}>
@@ -468,6 +507,7 @@ const ImportExport = ({ records, onImport }) => {
       {/* Added eslint-disable comment for the linter error */}
       {/* eslint-disable-next-line react/jsx-no-undef */}
       <CSVLink
+        ref={csvLinkRef}
         data={filteredRecords}
         headers={csvHeaders}
         filename={`vital_records_${new Date().toISOString().slice(0, 19)}.csv`}

@@ -8,14 +8,13 @@ import {
   TimeScale, // Add TimeScale
   PointElement,
   LineElement,
-  BarElement,
   Title,
   Tooltip,
   Legend,
   Filler,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns'; // Import the date-fns adapter
-import { Line, Bar } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
 // --- End Chart.js imports ---
 
 // Register Chart.js components - Include TimeScale
@@ -25,7 +24,6 @@ ChartJS.register(
   TimeScale, // Register TimeScale
   PointElement,
   LineElement,
-  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -48,21 +46,6 @@ const ReportView = ({ records }) => {
   const uniqueInitials = [...new Set(records.map(record => record.patient_initials))].sort();
 
   // Function to format date for display (adjust as needed)
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Invalid Date';
-    return date.toLocaleDateString();
-  };
-
-  // Function to format time for display (adjust as needed)
-  const formatTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Invalid Date';
-    return date.toLocaleTimeString();
-  };
-
   useEffect(() => {
     // Apply filters to the records prop - MODIFIED
     let filteredRecords = records;
@@ -111,7 +94,7 @@ const ReportView = ({ records }) => {
     // filteredRecords = filteredRecords.filter(record => new Date(record.datetime_recorded) >= thirtyDaysAgo);
 
     // Sort filtered records by date (oldest first for plotting)
-    const sortedRecords = filteredRecords.sort((a, b) => new Date(a.datetime_recorded) - new Date(b.datetime_recorded));
+    const sortedRecords = [...filteredRecords].sort((a, b) => new Date(a.datetime_recorded) - new Date(b.datetime_recorded));
 
     // Prepare labels (dates) - Use the full datetime string for Chart.js TimeScale to parse
     // Chart.js TimeScale can parse ISO strings directly
@@ -266,7 +249,7 @@ const ReportView = ({ records }) => {
 
   return (
     <div className="report-view">
-      <h2>30-Day Trend Reports</h2>
+      <h2>Trend Reports</h2>
 
       {/* Filters Section - ADDED */}
       <div className="filters-section">

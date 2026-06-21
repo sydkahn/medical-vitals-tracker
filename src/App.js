@@ -1,22 +1,31 @@
 // App.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import DataEntryForm from './components/DataEntryForm';
 import DataGrid from './components/DataGrid';
 import ReportView from './components/ReportView';
 import ImportExport from './components/ImportExport';
-import axios from 'axios'; // Import axios
+import axios from 'axios';
 
-// Define the API base URL (adjust if your server runs on a different port/IP)
-// Since the server serves the React app, using relative paths ('/api/...') should work.
-// If accessing from a different origin, change this to the full server URL (e.g., 'http://10.0.0.92:8080/api').
-const API_BASE_URL = '/api'; 
+const API_BASE_URL = '/api';
 
 const App = () => {
   const [vitalRecords, setVitalRecords] = useState([]);
   const [activeTab, setActiveTab] = useState('entry');
   const [editingRecordId, setEditingRecordId] = useState(null);
-  const [loading, setLoading] = useState(true); // Add loading state
+  const [loading, setLoading] = useState(true);
+  const [statusMessage, setStatusMessage] = useState(null);
+
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
+
+  const showMessage = useCallback((type, text) => {
+    setStatusMessage({ type, text });
+  }, []);
 
   // Fetch data from the backend on initial render
   useEffect(() => {
@@ -50,11 +59,10 @@ const App = () => {
       const response = await axios.get(`${API_BASE_URL}/vitals`);
       setVitalRecords(response.data);
       setEditingRecordId(null); // Clear editing state
-    } catch (error) {
-      console.error("Error saving vital record:", error);
-      // Handle error appropriately (e.g., show a message to the user)
-      alert("Error saving record. Please check the console for details.");
-    }
+      } catch (error) {
+        console.error("Error saving vital record:", error);
+        showMessage('error', 'Error saving record. Please check the console for details.');
+      }
   };
 
   const handleDeleteRecord = async (id) => {
@@ -66,8 +74,7 @@ const App = () => {
         setVitalRecords(response.data);
       } catch (error) {
         console.error("Error deleting vital record:", error);
-        // Handle error appropriately
-        alert("Error deleting record. Please check the console for details.");
+        showMessage('error', 'Error deleting record. Please check the console for details.');
       }
     }
   };
@@ -87,6 +94,12 @@ const App = () => {
 
   return (
     <div className="app">
+      {statusMessage && (
+        <div className={`status-bar ${statusMessage.type}`}>
+          <span>{statusMessage.text}</span>
+          <button className="status-dismiss" onClick={() => setStatusMessage(null)}>x</button>
+        </div>
+      )}
       <header className="app-header">
         <h1>Medical Vital Statistics Tracker</h1>
         <nav>
@@ -122,7 +135,8 @@ const App = () => {
           <DataEntryForm
             onSave={handleSaveRecord}
             onCancel={handleCancelEdit}
-            editingRecord={vitalRecords.find(r => r.id === editingRecordId)} // Pass the record being edited
+            editingRecord={vitalRecords.find(r => r.id === editingRecordId)}
+            onMessage={showMessage}
           />
         )}
 
@@ -141,6 +155,7 @@ const App = () => {
         {activeTab === 'import' && (
           <ImportExport
             records={vitalRecords}
+            onMessage={showMessage}
             onImport={async (newRecords) => {
               // This is a simplified import - you might want to batch POST or validate more strictly
               try {
@@ -150,14 +165,13 @@ const App = () => {
                      const { id, ...recordWithoutId } = record;
                      await axios.post(`${API_BASE_URL}/vitals`, recordWithoutId);
                  }
-                 // Fetch updated data after import
-                 const response = await axios.get(`${API_BASE_URL}/vitals`);
-                 setVitalRecords(response.data);
-                 alert(`Successfully imported ${newRecords.length} records.`);
-              } catch (error) {
-                  console.error("Error importing records:", error);
-                  alert("Error importing records. Please check the console for details.");
-              }
+                  const response = await axios.get(`${API_BASE_URL}/vitals`);
+                  setVitalRecords(response.data);
+                  showMessage('success', `Successfully imported ${newRecords.length} records.`);
+               } catch (error) {
+                   console.error("Error importing records:", error);
+                   showMessage('error', 'Error importing records. Please check the console for details.');
+               }
             }}
           />
         )}

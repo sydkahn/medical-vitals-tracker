@@ -1,7 +1,7 @@
 // src/components/DataEntryForm.js
 import React, { useState, useEffect } from 'react';
 
-const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
+const DataEntryForm = ({ onSave, onCancel, editingRecord, onMessage }) => {
   const [formData, setFormData] = useState({
     dateTime: new Date().toISOString().slice(0, 16), // Default to current time, format YYYY-MM-DDTHH:mm
     patientInitials: '',
@@ -11,6 +11,8 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
     diastolic: '',
     oxygenSaturation: '',
     heartRate: '',
+    temperature: '',
+    temperatureUnit: 'F', // Default to Fahrenheit
     notes: ''
   });
 
@@ -32,6 +34,8 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
         diastolic: editingRecord.diastolic != null ? editingRecord.diastolic.toString() : '',
         oxygenSaturation: editingRecord.oxygen_saturation != null ? editingRecord.oxygen_saturation.toString() : '',
         heartRate: editingRecord.heart_rate != null ? editingRecord.heart_rate.toString() : '',
+        temperature: editingRecord.temperature != null ? editingRecord.temperature.toString() : '',
+        temperatureUnit: editingRecord.temperature_unit || 'F',
         notes: editingRecord.notes || ''
       });
     } else {
@@ -45,6 +49,8 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
         diastolic: '',
         oxygenSaturation: '',
         heartRate: '',
+        temperature: '',
+        temperatureUnit: 'F',
         notes: ''
       });
       setErrors({}); // Clear errors when resetting
@@ -95,51 +101,9 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Helper function to convert local time to Eastern Time (ET) and then to ISO string
-  // This function assumes the input dateTimeStr is in the format provided by datetime-local input (e.g., "2026-06-19T17:36")
-  // It calculates the equivalent time in ET and returns an ISO string in UTC format for the backend.
-  const convertToLocalETISOString = (dateTimeStr) => {
-    // Create a Date object from the input string (interpreted as LOCAL time by the browser)
+  const toUTCDateTime = (dateTimeStr) => {
     const localDate = new Date(dateTimeStr);
-
-    // Get the offset for Eastern Time (ET) in minutes for the specific date
-    // getTimezoneOffset() returns the offset from UTC *to* the local time in minutes (negative for east of GMT, positive for west)
-    // EST offset is +300 minutes (UTC-5), EDT offset is +240 minutes (UTC-4)
-    // Using US Eastern Time zone explicitly
-    const etZone = 'America/New_York';
-    const utcDate = new Date(localDate.toLocaleString('en-US', { timeZone: 'UTC' }));
-    const etDate = new Date(localDate.toLocaleString('en-US', { timeZone: etZone }));
-    const offsetMinutes = (localDate.getTime() - etDate.getTime()) / (1000 * 60);
-
-    // Calculate the time in ET's equivalent UTC
-    // The formula adjusts the local time to what UTC would be if ET was the local time
-    const etAsUtc = new Date(localDate.getTime() + offsetMinutes * 60000);
-
-    // Return the ISO string representation of the calculated ET time in UTC format
-    // The backend expects an ISO string, ideally in UTC or a consistent timezone format it can parse.
-    // Returning the ISO string with 'Z' suffix indicates UTC, which is standard.
-    // Note: This calculation aims to represent the ET moment in time as a UTC timestamp.
-    // The backend might need to store/display based on its own timezone handling.
-    // For simplicity here, we'll calculate the equivalent UTC instant.
-    // A more robust solution might involve sending the original local time and timezone info to the backend.
-    // But for now, assuming backend expects a standard ISO string representing the instant in time.
-
-    // A simpler approach using Intl.DateTimeFormat to get ET components and construct ISO string:
-    const etDateTime = new Date(localDate.toLocaleString("en-US", {timeZone: etZone}));
-    const year = etDateTime.getFullYear();
-    const month = String(etDateTime.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
-    const day = String(etDateTime.getDate()).padStart(2, '0');
-    const hours = String(etDateTime.getHours()).padStart(2, '0');
-    const minutes = String(etDateTime.getMinutes()).padStart(2, '0');
-    const seconds = String(etDateTime.getSeconds()).padStart(2, '0');
-
-    return new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds)).toISOString(); // Returns UTC ISO string representing the ET instant
-
-    // Alternative, more direct calculation based on offset:
-    // const offsetET = new Date().toLocaleString('en', { timeZone: 'America/New_York', timeZoneName: 'longOffset' }).split(' ').pop();
-    // const offsetMs = parseFloat(offsetET) * 60 * 60 * 1000; // Convert fraction of day to milliseconds
-    // const etInstant = new Date(localDate.getTime() + offsetMs);
-    // return etInstant.toISOString(); // This also returns a UTC ISO string
+    return localDate.toISOString();
   };
 
 
@@ -148,8 +112,8 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
 
     if (!validate()) {
       console.error("Validation failed:", errors);
-      alert("Validation failed. Please check the form for errors.");
-      return; // Don't submit if validation fails
+      onMessage('error', 'Validation failed. Please check the form for errors.');
+      return;
     }
 
     try {
@@ -157,7 +121,7 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
       const transformedData = {
         // Convert local datetime input to what the backend expects (likely UTC or consistent format)
         // Use the helper function to get the ET-based instant as an ISO string
-        datetime_recorded: convertToLocalETISOString(formData.dateTime),
+        datetime_recorded: toUTCDateTime(formData.dateTime),
         patient_initials: formData.patientInitials.trim().toUpperCase(), // Match server column name, ensure 3 chars, uppercase
         weight: formData.weight === '' ? null : parseFloat(formData.weight), // Convert to number or null, match server column name
         glucose: formData.glucose === '' ? null : parseFloat(formData.glucose), // Match server column name
@@ -165,6 +129,8 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
         diastolic: formData.diastolic === '' ? null : parseInt(formData.diastolic, 10), // Match server column name
         oxygen_saturation: formData.oxygenSaturation === '' ? null : parseFloat(formData.oxygenSaturation), // Convert and match server column name
         heart_rate: formData.heartRate === '' ? null : parseInt(formData.heartRate, 10), // Convert and match server column name
+        temperature: formData.temperature === '' ? null : parseFloat(formData.temperature), // Match server column name
+        temperature_unit: formData.temperatureUnit, // Match server column name
         notes: formData.notes // Text field, match server column name
       };
 
@@ -172,9 +138,7 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
       // This function likely makes an API call (axios.post/put)
       await onSave(transformedData); // Wait for the save operation to complete
 
-      // If we reach this point, the save was successful
-      alert("Record saved successfully!");
-      console.log("Record saved successfully!"); // Optional: log success
+      onMessage('success', 'Record saved successfully!');
 
       // Clear the form *only* after successful save
       if (!editingRecord) { // Only reset if we weren't editing an existing record
@@ -187,6 +151,8 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
           diastolic: '',
           oxygenSaturation: '',
           heartRate: '',
+          temperature: '',
+          temperatureUnit: 'F',
           notes: ''
         });
         setErrors({}); // Clear any lingering errors
@@ -197,8 +163,7 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
 
     } catch (error) {
       console.error("Error saving vital record:", error);
-      // Handle error appropriately (e.g., show a message to the user)
-      alert("Error saving record. Please check the console for details.");
+      onMessage('error', 'Error saving record. Please check the console for details.');
     }
   };
 
@@ -212,37 +177,39 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
     <div className="data-entry-form">
       <h2>{editingRecord ? 'Edit Vital Record' : 'Add New Vital Record'}</h2>
       <form onSubmit={handleSubmit}>
-        {/* Date and Time Field - FIRST */}
-        <div className="form-group">
-          <label htmlFor="dateTime">Date and Time:</label>
-          <input
-            type="datetime-local"
-            id="dateTime"
-            name="dateTime"
-            value={formData.dateTime}
-            onChange={handleChange}
-            required
-          />
-          {errors.dateTime && <span className="error">{errors.dateTime}</span>}
+        {/* First Row: Date and Initials */}
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="dateTime">Date and Time:</label>
+            <input
+              type="datetime-local"
+              id="dateTime"
+              name="dateTime"
+              value={formData.dateTime}
+              onChange={handleChange}
+              required
+            />
+            {errors.dateTime && <span className="error">{errors.dateTime}</span>}
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="patientInitials">Patient Initials (3 letters):</label>
+            <input
+              type="text"
+              id="patientInitials"
+              name="patientInitials"
+              value={formData.patientInitials}
+              onChange={handleChange}
+              maxLength="3"
+              required
+            />
+            {errors.patientInitials && <span className="error">{errors.patientInitials}</span>}
+          </div>
         </div>
 
-        {/* Patient Initials Field - SECOND */}
-        <div className="form-group">
-          <label htmlFor="patientInitials">Patient Initials (3 letters):</label>
-          <input
-            type="text"
-            id="patientInitials"
-            name="patientInitials"
-            value={formData.patientInitials}
-            onChange={handleChange}
-            maxLength="3"
-            required
-          />
-          {errors.patientInitials && <span className="error">{errors.patientInitials}</span>}
-        </div>
-
-        {/* Weight Field - THIRD */}
-         <div className="form-group">
+        {/* Second Row: Weight and Glucose */}
+        <div className="form-row">
+          <div className="form-group">
             <label htmlFor="weight">Weight (lbs/kg):</label>
             <input
               type="number"
@@ -254,20 +221,20 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
             />
           </div>
 
-        {/* Glucose Field - FOURTH */}
-        <div className="form-group">
-          <label htmlFor="glucose">Glucose (mg/dL):</label>
-          <input
-            type="number"
-            id="glucose"
-            name="glucose"
-            value={formData.glucose}
-            onChange={handleChange}
-            step="0.1"
-          />
+          <div className="form-group">
+            <label htmlFor="glucose">Glucose (mg/dL):</label>
+            <input
+              type="number"
+              id="glucose"
+              name="glucose"
+              value={formData.glucose}
+              onChange={handleChange}
+              step="0.1"
+            />
+          </div>
         </div>
 
-        {/* Blood Pressure Fields (Systolic/Diastolic) - FIFTH */}
+        {/* Third Row: Systolic and Diastolic */}
         <div className="form-row">
           <div className="form-group">
             <label htmlFor="systolic">Blood Pressure (Systolic):</label>
@@ -292,8 +259,9 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
           </div>
         </div>
 
-        {/* Oxygen Saturation Field - SIXTH */}
-        <div className="form-group">
+        {/* Fourth Row: Oxygen Saturation and Heart Rate */}
+        <div className="form-row">
+          <div className="form-group">
             <label htmlFor="oxygenSaturation">Oxygen Saturation (%):</label>
             <input
               type="number"
@@ -305,8 +273,7 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
             />
           </div>
 
-        {/* Heart Rate Field - SEVENTH */}
-         <div className="form-group">
+          <div className="form-group">
             <label htmlFor="heartRate">Heart Rate (bpm):</label>
             <input
               type="number"
@@ -316,9 +283,38 @@ const DataEntryForm = ({ onSave, onCancel, editingRecord }) => {
               onChange={handleChange}
             />
           </div>
+        </div>
 
-        {/* Notes Field - EIGHTH */}
-         <div className="form-group">
+        {/* Fifth Row: Temperature and Unit */}
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="temperature">Temperature:</label>
+            <input
+              type="number"
+              id="temperature"
+              name="temperature"
+              value={formData.temperature}
+              onChange={handleChange}
+              step="0.1"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="temperatureUnit">Unit:</label>
+            <select
+              id="temperatureUnit"
+              name="temperatureUnit"
+              value={formData.temperatureUnit}
+              onChange={handleChange}
+            >
+              <option value="F">°F</option>
+              <option value="C">°C</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Sixth Row: Notes (Full Width) */}
+        <div className="form-group">
           <label htmlFor="notes">Notes:</label>
           <textarea
             id="notes"
