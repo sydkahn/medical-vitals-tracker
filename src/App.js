@@ -157,21 +157,12 @@ const App = () => {
             records={vitalRecords}
             onMessage={showMessage}
             onImport={async (newRecords) => {
-              // This is a simplified import - you might want to batch POST or validate more strictly
-              try {
-                 for (const record of newRecords) {
-                     // Ensure the record structure matches the API expectation
-                     // Omit 'id' if it exists, as the database will generate a new one
-                     const { id, ...recordWithoutId } = record;
-                     await axios.post(`${API_BASE_URL}/vitals`, recordWithoutId);
-                 }
-                  const response = await axios.get(`${API_BASE_URL}/vitals`);
-                  setVitalRecords(response.data);
-                  showMessage('success', `Successfully imported ${newRecords.length} records.`);
-               } catch (error) {
-                   console.error("Error importing records:", error);
-                   showMessage('error', 'Error importing records. Please check the console for details.');
-               }
+              for (const record of newRecords) {
+                const { id, ...recordWithoutId } = record;
+                await axios.post(`${API_BASE_URL}/vitals`, recordWithoutId);
+              }
+              const response = await axios.get(`${API_BASE_URL}/vitals`);
+              setVitalRecords(response.data);
             }}
           />
         )}

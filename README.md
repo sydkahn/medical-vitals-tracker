@@ -1,75 +1,57 @@
-<<<<<<< HEAD
-# medical-vitals-tracker
-react app to imput vital statistics 
-=======
-# Getting Started with Create React App
+# Medical Vital Statistics Tracker
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A full-stack web application for recording, viewing, and reporting patient vital signs.
 
-## Available Scripts
+## Tech Stack
 
-In the project directory, you can run:
+- **Frontend**: React 19, Chart.js, react-chartjs-2, @react-pdf/renderer
+- **Backend**: Express 5, SQLite3
+- **Build**: Create React App
 
-### `npm start`
+## Features
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- **Data Entry** — Add/edit vital sign records (glucose, weight, temperature, blood pressure, heart rate, SpO2)
+- **Data Grid** — Searchable, sortable table of all records with edit/delete actions
+- **Trend Reports** — Line charts for each vital metric over time with date/patient filters
+- **Import/Export** — JSON/CSV/PDF export with filterable report view, JSON import
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Quick Start
 
-### `npm test`
+```bash
+# Install frontend dependencies
+npm install
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+# Install server dependencies
+cd server && npm install && cd ..
 
-### `npm run build`
+# Start the Express server (serves API + built React app)
+node server/server.js
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Open [http://localhost:8080](http://localhost:8080).
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Development
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```bash
+# Run React dev server (requires Express server running for API)
+npm start
+```
 
-### `npm run eject`
+Runs on [http://localhost:3000](http://localhost:3000) with hot reloading.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## API Endpoints
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/vitals` | List all records |
+| GET | `/api/vitals/:id` | Get single record |
+| POST | `/api/vitals` | Create record |
+| PUT | `/api/vitals/:id` | Update record |
+| DELETE | `/api/vitals/:id` | Delete record |
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Environment Variables
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
->>>>>>> 19ac893 (Initial commit)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | Server port |
+| `REACT_APP_PDF_EXPORT_URL` | `http://10.0.0.92:8081/report/pdf` | External PDF export endpoint |

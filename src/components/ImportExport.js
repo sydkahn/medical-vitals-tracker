@@ -312,22 +312,102 @@ const ImportExport = ({ records, onImport, onMessage }) => {
   };
   // --- END NEW FUNCTION ---
 
-  // Handle import from JSON
-  const handleImportJSON = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const importedData = JSON.parse(e.target.result);
-          onImport(importedData);
-        } catch (error) {
-          console.error("Error importing JSON:", error);
-          onMessage('error', 'Error importing JSON file. Please check the console for details.');
-        }
-      };
-      reader.readAsText(file);
+  const parseCSVLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
     }
+    result.push(current.trim());
+    return result;
+  };
+
+  const parseCSV = (text) => {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCSVLine(lines[0]);
+    const result = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      if (values.length === 0 || values.every(v => !v)) continue;
+      const row = {};
+      headers.forEach((header, idx) => {
+        const key = header.toLowerCase().replace(/ /g, '_');
+        row[key] = values[idx] || null;
+      });
+      result.push(row);
+    }
+    return result;
+  };
+
+  const detectDuplicates = (imported, existing) => {
+    const newRecords = [];
+    const skipped = [];
+    for (const record of imported) {
+      const isDuplicate = existing.some(r =>
+        r.patient_initials && record.patient_initials &&
+        r.patient_initials.toUpperCase() === record.patient_initials.toUpperCase() &&
+        r.datetime_recorded === record.datetime_recorded
+      );
+      if (isDuplicate) {
+        skipped.push(record);
+      } else {
+        const { id, ...rest } = record;
+        newRecords.push(rest);
+      }
+    }
+    return { newRecords, skipped };
+  };
+
+  // Handle import from JSON or CSV
+  const handleImportFile = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target.result;
+        let importedData;
+
+        if (file.name.endsWith('.csv')) {
+          importedData = parseCSV(text);
+        } else {
+          importedData = JSON.parse(text);
+        }
+
+        if (!Array.isArray(importedData) || importedData.length === 0) {
+          onMessage('error', 'File contains no valid records.');
+          return;
+        }
+
+        const { newRecords, skipped } = detectDuplicates(importedData, records);
+
+        if (newRecords.length === 0) {
+          onMessage('error', 'All records already exist (duplicates). No records imported.');
+          return;
+        }
+
+        await onImport(newRecords);
+
+        const msg = `Imported ${newRecords.length} record(s).` +
+          (skipped.length > 0 ? ` Skipped ${skipped.length} duplicate(s).` : '');
+        onMessage('success', msg);
+      } catch (error) {
+        console.error("Error importing file:", error);
+        onMessage('error', 'Error importing file. Please check the format.');
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Calculate summary statistics for the report view
@@ -430,9 +510,15 @@ const ImportExport = ({ records, onImport, onMessage }) => {
         >
           Export CSV
         </button>
-        <input type="file" accept=".json" onChange={handleImportJSON} />
+        <input type="file" accept=".json,.csv" onChange={handleImportFile} />
         <button onClick={() => saveAs(new Blob([JSON.stringify(SAMPLE_DATA, null, 2)], { type: 'application/json' }), 'sample_vital_data.json')}>
           Download Sample Data (JSON)
+        </button>
+        <button onClick={() => {
+          const sampleCSV = 'patient_initials,datetime_recorded,glucose,weight,temperature,temperature_unit,systolic,diastolic,heart_rate,oxygen_saturation,notes\nABC,2026-06-15T08:00:00.000Z,95,150.5,98.6,F,120,80,72,98.5,Morning check\nXYZ,2026-06-16T14:30:00.000Z,102,152.0,99.1,F,125,82,78,97.0,Afternoon monitoring';
+          saveAs(new Blob([sampleCSV], { type: 'text/csv' }), 'sample_vital_data.csv');
+        }}>
+          Download Sample Data (CSV)
         </button>
       </div>
 
